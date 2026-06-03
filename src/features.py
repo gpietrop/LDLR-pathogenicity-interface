@@ -35,7 +35,7 @@ FEATURE_LABELS = {
     'disrupts_frame':        'Disrupts Frame',
     'is_init_codon':         'Initiation Codon',
     'is_top_60_cys':         'Top-60 Cys Position',
-    'nmd_aa_below_830':      'AA < 830',
+    'nmd_aa_below_830':      'NMD, AA < 830',
     'aa_pos':                'AA Position',
     'has_aa_pos':            'AA Position known',
     'has_AF_popmax':         'Population AF known',

@@ -22,7 +22,9 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    [data-testid="stSidebar"] { min-width: 320px; max-width: 320px; }
+    [data-testid="stSidebar"] { min-width: 270px; max-width: 270px; }
+    .block-container { padding-left: 1.5rem !important; padding-right: 1.5rem !important; max-width: 100% !important; }
+    [data-testid="stExpander"] summary { font-size: 1.1rem !important; font-weight: 600 !important; background-color: #dbeafe !important; border-radius: 6px !important; padding: 8px 12px !important; }
     [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
     [data-testid="stSidebar"] [data-testid="stWidgetLabel"] {
         font-size: 1rem !important;
@@ -143,6 +145,63 @@ _AVAILABILITY_FLAGS = {
     'aa_pos':          'has_aa_pos',
 }
 
+FEATURE_HELP = {
+    'nmd_aa_below_830': (
+        "Flagged when ALL three conditions are true:"
+        "variant is nonsense (stop gained),"
+        "variant is frameshift, and"
+        "amino acid position < 830"
+    ),
+}
+
+
+def _validate_inputs(inputs: dict):
+    """Return list of (level, message) for logical inconsistencies in variant inputs.
+    level is 'error' (blocks prediction) or 'warning' (informational)."""
+    issues = []
+    e117   = bool(inputs.get('is_exon_1_17', 0))
+    e18    = bool(inputs.get('is_exon18', 0))
+    e4     = bool(inputs.get('is_exon4', 0))
+    n      = int(inputs.get('exon_number', 0) or 0)
+
+    # Exon flag conflicts
+    if e117 and e18:
+        issues.append(('error', 'Exon 1–17 and Exon 18 cannot both be selected.'))
+    if e18 and n != 18:
+        issues.append(('warning', f'Exon 18 is flagged but Exon Number is {n}.'))
+    if e4 and n != 4:
+        issues.append(('warning', f'Exon 4 is flagged but Exon Number is {n}.'))
+    if e117 and n > 17:
+        issues.append(('warning', f'Exon 1–17 is flagged but Exon Number is {n}.'))
+
+    # NMD flag: should be 1 iff aa_pos < 830 AND is_nonsense AND is_frameshift
+    has_aa      = bool(inputs.get('has_aa_pos', 0))
+    aa_pos      = inputs.get('aa_pos')
+    nmd         = bool(inputs.get('nmd_aa_below_830', 0))
+    is_nonsense = bool(inputs.get('is_nonsense', 0))
+    is_fs       = bool(inputs.get('is_frameshift', 0))
+
+    if has_aa and aa_pos is not None and not (isinstance(aa_pos, float) and np.isnan(aa_pos)):
+        aa_pos = float(aa_pos)
+        nmd_conditions_met = aa_pos < 830 and is_nonsense and is_fs
+        if nmd_conditions_met and not nmd:
+            issues.append(('warning',
+                f'AA position {int(aa_pos)} < 830, variant is nonsense and frameshift — '
+                f'"AA < 830" (NMD trigger) should be selected.'))
+        elif nmd and not nmd_conditions_met:
+            reasons = []
+            if aa_pos >= 830:
+                reasons.append(f'AA position {int(aa_pos)} ≥ 830')
+            if not is_nonsense:
+                reasons.append('variant is not nonsense')
+            if not is_fs:
+                reasons.append('variant is not frameshift')
+            issues.append(('warning',
+                f'"AA < 830" (NMD trigger) is selected but: {", ".join(reasons)}.'))
+
+    return issues
+
+
 def _imputed_features(inputs: dict) -> set:
     """Return the set of feature names whose values were default-filled (not measured)."""
     return {
@@ -158,6 +217,27 @@ _TREE_IMAGES = {
     "Core + missense predictor (REVEL)":                 _IMAGES_DIR / 'model_revel.png',
     "Core + missense predictor + conservation (phyloP)": _IMAGES_DIR / 'model_revel_phylo.png',
 }
+
+def _pred_card_small_html(pred_class, pred_proba, title="Predicted"):
+    label = "PATHOGENIC" if pred_class == 1 else "BENIGN"
+    conf  = round(pred_proba * 100, 1)
+    if conf < 75:
+        border_color = "#b8b400"
+        label_color  = "#b8b400"
+        border_width = "2px"
+    else:
+        border_color = "#c0392b" if pred_class == 1 else "#27ae60"
+        label_color  = border_color
+        border_width = "2px"
+    return f"""
+    <div style="font-size:1rem; font-weight:normal; color:#333;
+                margin-bottom:4px; text-align:center;">{title}</div>
+    <div style="border:{border_width} solid {border_color}; border-radius:6px;
+                padding:6px 8px; text-align:center;">
+        <div style="font-size:1.1rem; font-weight:700; color:{label_color};">{label}</div>
+        <div style="font-size:0.75rem; color:#777; margin-top:2px;">{conf}%</div>
+    </div>"""
+
 
 def render_tree(model_name: str):
     img_path = _TREE_IMAGES.get(model_name)
@@ -302,7 +382,8 @@ if mode == "Manual input":
             with col:
                 inputs[feat] = int(
                     st.checkbox(FEATURE_LABELS[feat],
-                                value=bool(FEATURE_DEFAULTS[feat]), key=feat)
+                                value=bool(FEATURE_DEFAULTS[feat]), key=feat,
+                                help=FEATURE_HELP.get(feat))
                 )
 
     st.divider()
@@ -346,11 +427,12 @@ if mode == "Manual input":
             with col:
                 inputs[feat] = int(
                     st.checkbox(FEATURE_LABELS[feat],
-                                value=bool(FEATURE_DEFAULTS[feat]), key=feat)
+                                value=bool(FEATURE_DEFAULTS[feat]), key=feat,
+                                help=FEATURE_HELP.get(feat))
                 )
 
-    if inputs.get('is_exon_1_17') and inputs.get('is_exon18'):
-        st.error("A variant cannot be in Exon 1–17 and Exon 18 at the same time. Please uncheck one.")
+    for level, msg in _validate_inputs(inputs):
+        (st.error if level == 'error' else st.warning)(msg)
 
     st.divider()
 
@@ -449,7 +531,8 @@ if mode == "Manual input":
             inputs['functional_sd'] = np.nan
 
     st.divider()
-    exon_conflict = bool(inputs.get('is_exon_1_17') and inputs.get('is_exon18'))
+    exon_issues   = _validate_inputs(inputs)
+    exon_conflict = any(lvl == 'error' for lvl, _ in exon_issues)
     classify_btn = st.button("Classify Variant", type="primary",
                              use_container_width=True, disabled=exon_conflict)
 
@@ -648,6 +731,195 @@ else:
         )
 
     st.divider()
+
+    # ── What if? ─────────────────────────────────────────────────────────────
+
+    with st.expander("What if? Explore modifications", expanded=False):
+
+        # Reset counter — incrementing it changes all widget keys, forcing re-init
+        if 'wif_reset_counter' not in st.session_state:
+            st.session_state['wif_reset_counter'] = 0
+
+        # Auto-reset when a different variant is selected
+        if st.session_state.get('_wif_key') != selected_key:
+            st.session_state['wif_reset_counter'] += 1
+            st.session_state['_wif_key'] = selected_key
+
+        _rc = st.session_state['wif_reset_counter']  # appended to every widget key
+
+        def _wif_init(feat, row):
+            """Return initial value for a WIF input in display space."""
+            if feat == 'has_aa_pos':
+                return int(not pd.isna(row.get('aa_pos')))
+            raw = row[feat] if feat in row.index else np.nan
+            if pd.isna(raw):
+                if feat == 'log10_AF_popmax':
+                    return 1e-6
+                if feat in HARDCODED_FILLS:
+                    return HARDCODED_FILLS[feat]
+                v = imputer_defaults.get(feat, 0.0)
+                return int(round(v)) if feat in BINARY_FEATURES else float(v)
+            if feat == 'log10_AF_popmax':
+                return float(10 ** float(raw))
+            return int(raw) if feat in BINARY_FEATURES else float(raw)
+
+        wif = {}
+        col_form, col_result = st.columns([5, 5])
+
+        with col_form:
+            # ── Variant Type ──────────────────────────────────────────
+            with st.container(border=True):
+                st.markdown("**Variant Type**")
+                vt_feats = [f for f in FEATURE_GROUPS['Variant Type'] if f in feat_cols_set]
+                for row_start in range(0, len(vt_feats), 3):
+                    for col, feat in zip(st.columns(3), vt_feats[row_start:row_start + 3]):
+                        with col:
+                            wif[feat] = int(st.checkbox(FEATURE_LABELS[feat],
+                                value=bool(_wif_init(feat, row)), key=f'wif_{feat}_{_rc}',
+                                help=FEATURE_HELP.get(feat)))
+
+            # ── Exon & Position ───────────────────────────────────────
+            with st.container(border=True):
+                st.markdown("**Exon & Position**")
+                ni1, ni2, ni3 = st.columns(3)
+                with ni1:
+                    if 'exon_number' in feat_cols_set:
+                        wif['exon_number'] = float(st.number_input(
+                            FEATURE_LABELS['exon_number'], min_value=1, max_value=18,
+                            value=int(_wif_init('exon_number', row)), step=1, key=f'wif_exon_number_{_rc}'))
+                with ni2:
+                    if 'codon_change_length' in feat_cols_set:
+                        wif['codon_change_length'] = float(st.number_input(
+                            FEATURE_LABELS['codon_change_length'], min_value=-50, max_value=50,
+                            value=int(_wif_init('codon_change_length', row)), step=1, key=f'wif_codon_change_length_{_rc}'))
+                with ni3:
+                    if 'has_aa_pos' in feat_cols_set:
+                        wif['has_aa_pos'] = int(st.checkbox(FEATURE_LABELS['has_aa_pos'],
+                            value=bool(_wif_init('has_aa_pos', row)), key=f'wif_has_aa_pos_{_rc}'))
+                        aa_init = row['aa_pos'] if not pd.isna(row.get('aa_pos')) else imputer_defaults.get('aa_pos', 0.0)
+                        aa_val = st.number_input(FEATURE_LABELS['aa_pos'],
+                            min_value=0.0, value=float(aa_init), step=1.0,
+                            key=f'wif_aa_pos_{_rc}', disabled=not wif['has_aa_pos'])
+                        wif['aa_pos'] = float(aa_val) if wif['has_aa_pos'] else np.nan
+                    else:
+                        wif['has_aa_pos'] = 0
+                        wif['aa_pos'] = np.nan
+
+                ep_bool = [f for f in FEATURE_GROUPS['Exon & Position']
+                           if f not in ('exon_number', 'codon_change_length', 'has_aa_pos', 'aa_pos')
+                           and f in feat_cols_set]
+                for row_start in range(0, len(ep_bool), 3):
+                    for col, feat in zip(st.columns(3), ep_bool[row_start:row_start + 3]):
+                        with col:
+                            wif[feat] = int(st.checkbox(FEATURE_LABELS[feat],
+                                value=bool(_wif_init(feat, row)), key=f'wif_{feat}_{_rc}',
+                                help=FEATURE_HELP.get(feat)))
+
+        # ── Scores + Result in the right panel ────────────────────────────
+        with col_result:
+            if st.button("Reset to original values", use_container_width=True):
+                st.session_state['wif_reset_counter'] += 1
+                st.rerun()
+            result_placeholder = st.empty()   # filled AFTER wif is complete
+            with st.container(border=True):
+                st.markdown("**Scores**")
+                n_sc = 2 + int(has_revel) + int(has_phylop)
+                sc_cols = st.columns(n_sc)
+                sc_i = 0
+
+                with sc_cols[sc_i]:
+                    wif['has_AF_popmax'] = int(st.checkbox(FEATURE_LABELS['has_AF_popmax'],
+                        value=bool(_wif_init('has_AF_popmax', row)), key=f'wif_has_AF_popmax_{_rc}'))
+                    af_init = _wif_init('log10_AF_popmax', row)
+                    af_raw = st.number_input('AF popmax', value=float(af_init),
+                        min_value=0.0, max_value=1.0, step=0.0001, format='%.6f',
+                        key=f'wif_log10_AF_popmax_{_rc}', disabled=not wif['has_AF_popmax'])
+                    wif['log10_AF_popmax'] = (-6.0 if af_raw == 0.0 else float(np.log10(af_raw))) if wif['has_AF_popmax'] else -6.0
+
+                    wif['has_spliceai'] = int(st.checkbox(FEATURE_LABELS['has_spliceai'],
+                        value=bool(_wif_init('has_spliceai', row)), key=f'wif_has_spliceai_{_rc}'))
+                    sp_val = st.number_input(FEATURE_LABELS['spliceai'],
+                        value=float(_wif_init('spliceai', row)),
+                        min_value=0.0, max_value=1.0, step=0.01,
+                        key=f'wif_spliceai_{_rc}', disabled=not wif['has_spliceai'])
+                    wif['spliceai'] = float(sp_val) if wif['has_spliceai'] else 0.0
+                sc_i += 1
+
+                if has_revel:
+                    with sc_cols[sc_i]:
+                        wif['has_REVEL'] = int(st.checkbox(FEATURE_LABELS['has_REVEL'],
+                            value=bool(_wif_init('has_REVEL', row)), key=f'wif_has_REVEL_{_rc}'))
+                        rv_val = st.number_input(FEATURE_LABELS['REVEL'],
+                            value=float(_wif_init('REVEL', row)),
+                            min_value=0.0, max_value=1.0, step=0.01,
+                            key=f'wif_REVEL_{_rc}', disabled=not wif['has_REVEL'])
+                        wif['REVEL'] = float(rv_val) if wif['has_REVEL'] else np.nan
+                    sc_i += 1
+
+                if has_phylop:
+                    with sc_cols[sc_i]:
+                        wif['has_phyloP100way'] = int(st.checkbox(FEATURE_LABELS['has_phyloP100way'],
+                            value=bool(_wif_init('has_phyloP100way', row)), key=f'wif_has_phyloP100way_{_rc}'))
+                        ph_val = st.number_input(FEATURE_LABELS['phyloP100way'],
+                            value=float(_wif_init('phyloP100way', row)),
+                            min_value=-20.0, max_value=10.0, step=0.01,
+                            key=f'wif_phyloP100way_{_rc}', disabled=not wif['has_phyloP100way'])
+                        wif['phyloP100way'] = float(ph_val) if wif['has_phyloP100way'] else np.nan
+                    sc_i += 1
+
+                with sc_cols[sc_i]:
+                    wif['has_functional_score'] = int(st.checkbox(FEATURE_LABELS['has_functional_score'],
+                        value=bool(_wif_init('has_functional_score', row)), key=f'wif_has_functional_score_{_rc}'))
+                    fs_val = st.number_input(FEATURE_LABELS['functional_score'],
+                        value=float(_wif_init('functional_score', row)),
+                        key=f'wif_functional_score_{_rc}', disabled=not wif['has_functional_score'])
+                    se_val = st.number_input(FEATURE_LABELS['functional_se'],
+                        value=float(_wif_init('functional_se', row)),
+                        min_value=0.0, key=f'wif_functional_se_{_rc}', disabled=not wif['has_functional_score'])
+                    sd_val = st.number_input(FEATURE_LABELS['functional_sd'],
+                        value=float(_wif_init('functional_sd', row)),
+                        min_value=0.0, key=f'wif_functional_sd_{_rc}', disabled=not wif['has_functional_score'])
+                    if wif['has_functional_score']:
+                        wif['functional_score'] = float(fs_val)
+                        wif['functional_se']    = float(se_val)
+                        wif['functional_sd']    = float(sd_val)
+                    else:
+                        wif['functional_score'] = wif['functional_se'] = wif['functional_sd'] = np.nan
+
+        # All wif values now collected — compute and fill the placeholder
+        wif_dt_pred, wif_dt_proba, _ = predict(bundle, wif)
+        wif_rf_pred, wif_rf_proba, _ = predict(rf_bundle, wif)
+        def _wif_flag(orig_pred, orig_proba, new_pred, new_proba, model_name):
+            orig_label = "PATHOGENIC" if orig_pred == 1 else "BENIGN"
+            new_label  = "PATHOGENIC" if new_pred  == 1 else "BENIGN"
+            if new_pred != orig_pred:
+                return (
+                    f"<div style='color:#c0392b; font-size:0.88rem; font-weight:600; margin:2px 0;'>"
+                    f"⚠ {model_name}: {orig_label} → {new_label}</div>"
+                )
+            diff = new_proba - orig_proba
+            if abs(diff) >= 0.001:
+                arrow = "↑" if diff > 0 else "↓"
+                return (
+                    f"<div style='color:#e67e22; font-size:0.88rem; margin:2px 0;'>"
+                    f"{arrow} {model_name}: {abs(diff)*100:.1f}% (still {new_label})</div>"
+                )
+            return (
+                f"<div style='color:#27ae60; font-size:0.88rem; margin:2px 0;'>"
+                f"✓ {model_name}: Unchanged</div>"
+            )
+
+        wif_exon_issues = _validate_inputs(wif)
+        with result_placeholder.container():
+            for level, msg in wif_exon_issues:
+                (st.error if level == 'error' else st.warning)(msg)
+            rc1, rc2 = st.columns(2)
+            with rc1:
+                st.markdown(_pred_card_small_html(wif_dt_pred, wif_dt_proba, "Decision Tree"), unsafe_allow_html=True)
+                st.markdown(_wif_flag(dt_pred, dt_proba, wif_dt_pred, wif_dt_proba, "DT"), unsafe_allow_html=True)
+            with rc2:
+                st.markdown(_pred_card_small_html(wif_rf_pred, wif_rf_proba, "Random Forest"), unsafe_allow_html=True)
+                st.markdown(_wif_flag(rf_pred, rf_proba, wif_rf_pred, wif_rf_proba, "RF"), unsafe_allow_html=True)
 
     # ── Feature values helper ─────────────────────────────────────────────────
     def _feat_row(feat, row):
