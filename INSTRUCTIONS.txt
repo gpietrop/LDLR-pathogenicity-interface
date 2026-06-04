@@ -1,0 +1,98 @@
+LDLR VARIANT PATHOGENICITY CLASSIFIER — USER GUIDE
+====================================================
+
+
+GETTING STARTED
+---------------
+When you open the interface, select one of three models:
+
+  - Core model: uses variant type, exon/position flags, splicing scores and
+    functional assay data. Not all of these are necessary to run the model;
+    if not available, the model will use default values
+
+  - Core + missense predictor (REVEL): extends the Core model with the REVEL
+    in silico pathogenicity score. Use this when REVEL is available
+
+  - Core + missense predictor + conservation (phyloP): further adds the
+    phyloP100way evolutionary conservation score. Use this when both REVEL
+    and phyloP are available
+
+Choose the model that matches the data you have available and click Continue
+You can always change the model afterwards, the button to do so is always
+visible in the upper left of the page
+
+
+INPUT MODE
+----------
+Use the sidebar to switch between two modes:
+
+  1. Manual input: enter the features of a new variant using the form on screen
+     - Tick the relevant checkboxes for variant type and exon flags
+     - Numerical fields (AF popmax, SpliceAI, REVEL, etc.) are greyed out until
+       the corresponding availability checkbox is ticked. If not ticked, the
+       default value will be used
+     - Click Classify Variant to see the prediction
+
+  2. Select from dataset: browse the LDLR variants from ClinVar
+     - Use the Search bar to find a variant by genomic position, nucleotide
+       change (e.g. 2389+2T>G) or protein change (e.g. p.Cys143Phe)
+     - Use Filter by prediction to show only misclassified variants
+       (by Decision Tree, Random Forest, or both)
+     - Use Variant type to restrict the list to a specific mutation class
+
+
+READING THE RESULTS
+-------------------
+1. Both the Decision Tree and Random Forest models return an independent
+   prediction:
+   - PATHOGENIC or BENIGN with a confidence percentage
+   - A yellow border on the prediction card means confidence is below 75%
+     Interpret these cases with additional caution
+
+2. The True label (from ClinVar) is shown in a filled coloured box for
+   comparison
+
+3. The Decision Path table explains step by step which features the Decision
+   Tree used and whether each condition was met by the variant
+
+4. The Decision Tree Structure panel shows the full tree for additional context
+
+
+CLINVAR SEARCH
+--------------
+In dataset mode, the variant header displays two copyable fields:
+
+  - The HGVS notation (e.g. NM_000527.5:c.143G>T)
+  - The protein change in standard notation (e.g. p.Cys48Phe)
+
+Click the copy icon on either field and paste directly into ClinVar
+(https://www.ncbi.nlm.nih.gov/clinvar/) to look up the variant
+
+
+FEATURE VALUES TABLE
+--------------------
+The Feature Values panel shows all input features for the selected variant,
+grouped by category
+
+  - Blue cells indicate the feature is present (Yes)
+  - Grey values indicate the feature was not available and a default value
+    was used by the model
+  - The note "(imputed)" indicates the value was estimated, either from the
+    training set median or with an ad hoc default value
+
+
+EXPLORING WHAT-IF SCENARIOS
+----------------------------
+The "Modify variant features and assess how the prediction change" panel
+(available in dataset mode, above the feature table) lets you change
+individual feature values and instantly see the updated prediction
+This can help to explore hypothetical cases and understand how the model
+behaves. For example, if a variant is predicted as benign and has a low REVEL
+score, you can ask whether increasing that value would also change the
+prediction to pathogenic
+
+  - All inputs are pre-filled with the variant's actual values
+  - Greyed-out fields become editable once the availability checkbox is ticked
+  - Click Reset to original values to restore all fields
+  - The flags below each prediction card indicate whether the class changed
+    or only the confidence shifted
