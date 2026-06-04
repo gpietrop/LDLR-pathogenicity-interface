@@ -7,6 +7,7 @@ import os
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.features import (
     BINARY_FEATURES, FEATURE_DEFAULTS, FEATURE_GROUPS, FEATURE_LABELS,
@@ -701,7 +702,7 @@ else:
 
     _hgvs_name = row.get('#Uploaded_variation', None)
 
-    _widths = [1.5] + ([1] if protein_change and _hgvs_name else []) + [3]
+    _widths = [1.5] + ([1] if protein_change and _hgvs_name else []) + [0.5, 2]
     _label_col, *_copy_cols = st.columns([0.6] + _widths)
     with _label_col:
         st.markdown(
@@ -716,6 +717,31 @@ else:
     if protein_change:
         with _copy_cols[_ci]:
             st.code(protein_change, language=None)
+        _ci += 1
+    with _copy_cols[_ci]:
+        pass  # spacer
+    with _copy_cols[_ci + 1]:
+        escaped_key = selected_key.replace("'", "\\'")
+        components.html(
+            f"""
+            <button onclick="
+                var ta = document.createElement('textarea');
+                ta.value = '{escaped_key}';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                this.innerText='✓ Copied';
+                setTimeout(() => this.innerText='📋 Copy internal ID', 2000);
+            " style="
+                margin-top:8px; font-size:0.75rem; color:#888;
+                background:none; border:1px solid #ccc; border-radius:4px;
+                padding:4px 10px; cursor:pointer; white-space:nowrap;
+            ">📋 Copy internal ID</button>
+            """,
+            height=42,
+        )
+
     st.write("")
 
     true_class = int(row['VariantClassification'])
