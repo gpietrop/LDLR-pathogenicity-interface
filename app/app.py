@@ -851,7 +851,7 @@ else:
                 with ni2:
                     if 'codon_change_length' in feat_cols_set:
                         wif['codon_change_length'] = float(st.number_input(
-                            FEATURE_LABELS['codon_change_length'], min_value=-50, max_value=50,
+                            FEATURE_LABELS['codon_change_length'], min_value=-10000, max_value=10000,
                             value=int(_wif_init('codon_change_length', row)), step=1, key=f'wif_codon_change_length_{_rc}'))
                 with ni3:
                     if 'has_aa_pos' in feat_cols_set:
